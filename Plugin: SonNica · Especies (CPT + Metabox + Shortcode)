@@ -1,0 +1,203 @@
+2) Plugin: SonNica · Especies (CPT + Metabox + Shortcode)
+
+Ruta sugerida: /wp-content/plugins/sonnica-especies/sonnica-especies.php
+
+<?php
+/**
+ * Plugin Name: SonNica · Especies
+ * Description: CPT "sonnica_especie" con metadatos y shortcode [sonnica_especies] para mostrar catálogo tipo grilla (responsive).
+ * Version:     1.0.0
+ * Author:      SonNica
+ */
+
+if (!defined('ABSPATH')) exit;
+
+class SonNica_Especies {
+    const CPT = 'sonnica_especie';
+    const META_SCI   = '_sonnica_scientific_name';
+    const META_AUDIO = '_sonnica_audio_url';
+
+    public function __construct() {
+        add_action('init',                [$this, 'register_cpt']);
+        add_action('add_meta_boxes',      [$this, 'add_metaboxes']);
+        add_action('save_post',           [$this, 'save_meta']);
+        add_shortcode('sonnica_especies', [$this, 'shortcode_grid']);
+    }
+
+    /** Custom Post Type */
+    public function register_cpt() {
+        $labels = [
+            'name'               => 'Especies',
+            'singular_name'      => 'Especie',
+            'add_new'            => 'Añadir especie',
+            'add_new_item'       => 'Añadir nueva especie',
+            'edit_item'          => 'Editar especie',
+            'new_item'           => 'Nueva especie',
+            'view_item'          => 'Ver especie',
+            'search_items'       => 'Buscar especies',
+            'not_found'          => 'No se encontraron especies',
+            'not_found_in_trash' => 'No hay especies en la papelera',
+            'menu_name'          => 'SonNica · Especies',
+        ];
+        $args = [
+            'labels'             => $labels,
+            'public'             => true,
+            'menu_position'      => 5,
+            'menu_icon'          => 'dashicons-twitter', // icono de pajarito :)
+            'supports'           => ['title','editor','thumbnail','excerpt'],
+            'has_archive'        => true,
+            'rewrite'            => ['slug' => 'especie'],
+            'show_in_rest'       => true,
+        ];
+        register_post_type(self::CPT, $args);
+        add_theme_support('post-thumbnails', [self::CPT]);
+    }
+
+    /** Metaboxes: nombre científico + audio */
+    public function add_metaboxes() {
+        add_meta_box('sonnica_meta', 'Datos de la especie', [$this, 'render_metabox'], self::CPT, 'normal', 'default');
+    }
+
+    public function render_metabox($post) {
+        wp_nonce_field('sonnica_meta_nonce', 'sonnica_meta_nonce');
+        $sci   = get_post_meta($post->ID, self::META_SCI, true);
+        $audio = get_post_meta($post->ID, self::META_AUDIO, true);
+        ?>
+        <p>
+            <label><strong>Nombre científico</strong></label><br>
+            <input type="text" name="sonnica_scientific_name" class="widefat" value="<?php echo esc_attr($sci); ?>" placeholder="Ej: Amazilia rutila">
+        </p>
+        <p>
+            <label><strong>URL de audio (mp3/ogg)</strong></label><br>
+            <input type="url" name="sonnica_audio_url" class="widefat" value="<?php echo esc_url($audio); ?>" placeholder="https://…/canto.mp3">
+        </p>
+        <?php
+    }
+
+    public function save_meta($post_id) {
+        if (!isset($_POST['sonnica_meta_nonce']) || !wp_verify_nonce($_POST['sonnica_meta_nonce'], 'sonnica_meta_nonce')) {
+            return;
+        }
+        if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
+        if (!current_user_can('edit_post', $post_id)) return;
+
+        if (isset($_POST['sonnica_scientific_name'])) {
+            update_post_meta($post_id, self::META_SCI, sanitize_text_field($_POST['sonnica_scientific_name']));
+        }
+        if (isset($_POST['sonnica_audio_url'])) {
+            update_post_meta($post_id, self::META_AUDIO, esc_url_raw($_POST['sonnica_audio_url']));
+        }
+    }
+
+    /** Shortcode: [sonnica_especies columns="4" search="true"] */
+    public function shortcode_grid($atts) {
+        $atts = shortcode_atts([
+            'columns' => 4,     // 1-6
+            'search'  => 'true' // muestra buscador local
+        ], $atts, 'sonnica_especies');
+
+        // consulta
+        $q = new WP_Query([
+            'post_type'      => self::CPT,
+            'posts_per_page' => -1,
+            'post_status'    => 'publish',
+            'orderby'        => 'title',
+            'order'          => 'ASC',
+        ]);
+
+        // estilos mínimos embebidos
+        ob_start(); ?>
+        <style>
+        .sonnica-wrap{--gap:22px; --cols: <?php echo (int)$atts['columns']; ?>; }
+        .sonnica-grid{display:grid; gap:var(--gap); grid-template-columns:repeat(1,minmax(0,1fr));}
+        @media(min-width:720px){ .sonnica-grid{grid-template-columns:repeat(2,minmax(0,1fr));} }
+        @media(min-width:1024px){ .sonnica-grid{grid-template-columns:repeat(<?php echo max(2,min(6,(int)$atts['columns'])); ?>,minmax(0,1fr));} }
+        .sonnica-card{background:#fff; border-radius:16px; overflow:hidden; box-shadow:0 10px 26px rgba(2,6,23,.1); transition:transform .18s ease,box-shadow .18s ease;}
+        .sonnica-card:hover{transform:translateY(-3px); box-shadow:0 14px 34px rgba(2,6,23,.16);}
+        .sonnica-fig{display:grid; place-items:center; padding:10px; border-bottom:1px solid rgba(2,6,23,.06); background:#fff;}
+        .sonnica-fig img{width:100%; height:220px; object-fit:contain;}
+        .sonnica-card h3{text-align:center; color:#5BAC2B; margin:10px 12px 4px; font-weight:800; font-size:1.05rem;}
+        .sonnica-card .sci{display:block; text-align:center; color:#64748b; margin-bottom:8px; font-style:italic; font-size:.95rem;}
+        .sonnica-card .desc{padding:0 14px 12px; color:#334155; text-align:justify; font-size:.95rem; line-height:1.55;}
+        .sonnica-card audio{width:calc(100% - 24px); margin:4px 12px 14px; display:block;}
+        .sonnica-search{max-width:420px; margin:0 auto 18px; background:#fff; border-radius:12px; padding:10px 14px; box-shadow:0 6px 18px rgba(2,6,23,.08); display:flex; gap:8px; align-items:center;}
+        .sonnica-search input{flex:1; border:none; outline:none; font-size:16px;}
+        .sonnica-dim{opacity:.35; filter:grayscale(.25);}
+        .sonnica-hit{outline:3px solid rgba(91,172,43,.35); outline-offset:-3px;}
+        </style>
+
+        <div class="sonnica-wrap">
+            <?php if ($atts['search'] === 'true'): ?>
+            <label class="sonnica-search">
+                <input type="search" id="sonnicaSearch" placeholder="Buscar especie o descripción…">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="M20 20L17 17"></path></svg>
+            </label>
+            <?php endif; ?>
+
+            <div class="sonnica-grid" id="sonnicaGrid">
+                <?php if ($q->have_posts()):
+                    while ($q->have_posts()): $q->the_post();
+                        $img   = get_the_post_thumbnail_url(get_the_ID(),'large');
+                        $title = get_the_title();
+                        $sci   = get_post_meta(get_the_ID(), self::META_SCI, true);
+                        $audio = get_post_meta(get_the_ID(), self::META_AUDIO, true);
+                        $desc  = get_the_excerpt() ?: wp_trim_words( wp_strip_all_tags( get_the_content() ), 36, '…' );
+                        ?>
+                        <article class="sonnica-card" 
+                                 data-title="<?php echo esc_attr($title); ?>"
+                                 data-desc="<?php echo esc_attr($desc); ?>">
+                            <figure class="sonnica-fig">
+                                <?php if ($img): ?>
+                                    <img src="<?php echo esc_url($img); ?>" alt="<?php echo esc_attr($title); ?>">
+                                <?php else: ?>
+                                    <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='360'%3E%3Crect width='100%25' height='100%25' fill='%23eef2ff'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%2364758b' font-family='Arial' font-size='18'%3ESin imagen%3C/text%3E%3C/svg%3E" alt="<?php echo esc_attr($title); ?>">
+                                <?php endif; ?>
+                            </figure>
+                            <h3><?php echo esc_html($title); ?></h3>
+                            <?php if ($sci): ?>
+                                <small class="sci"><?php echo esc_html($sci); ?></small>
+                            <?php endif; ?>
+                            <div class="desc"><?php echo esc_html($desc); ?></div>
+                            <?php if ($audio): ?>
+                                <audio controls preload="none">
+                                    <source src="<?php echo esc_url($audio); ?>" type="audio/mpeg">
+                                </audio>
+                            <?php endif; ?>
+                        </article>
+                    <?php endwhile; wp_reset_postdata();
+                else: ?>
+                    <p>No hay especies publicadas aún.</p>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <?php if ($atts['search'] === 'true'): ?>
+        <script>
+        (function(){
+          const input = document.getElementById('sonnicaSearch');
+          if(!input) return;
+          const cards = Array.from(document.querySelectorAll('#sonnicaGrid .sonnica-card'));
+          input.addEventListener('input', function(){
+            const q = (this.value || '').toLowerCase().trim();
+            let first = null;
+            cards.forEach(c=>{
+              const k = (c.dataset.title + ' ' + c.dataset.desc).toLowerCase();
+              const hit = q==='' ? true : k.includes(q);
+              c.classList.remove('sonnica-hit','sonnica-dim');
+              if(q!==''){
+                if(hit){ c.classList.add('sonnica-hit'); if(!first) first = c; }
+                else { c.classList.add('sonnica-dim'); }
+              }
+            });
+            if(first){ first.scrollIntoView({behavior:'smooth', block:'center'}); }
+          });
+        })();
+        </script>
+        <?php endif; ?>
+
+        <?php
+        return ob_get_clean();
+    }
+}
+
+new SonNica_Especies();
