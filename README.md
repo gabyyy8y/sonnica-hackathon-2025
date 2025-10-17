@@ -186,7 +186,3 @@ Integración académica, tecnología y sostenibilidad ambiental 🌱
 © 2025 — Todos los derechos reservados.
 
 
----
-
-¿Quieres que te prepare también el **`docs/endpoints.md`** y **`docs/sql/create_table.sql`** para que los pegues directo en GitHub y se vea profesional junto con este README?  
-Así tu repositorio quedaría completo para mostrarlo al jurado o comité.
